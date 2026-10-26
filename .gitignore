@@ -1,0 +1,8 @@
+# 编译产物
+/build/
+# 运行数据（含 WARP 私钥、令牌），绝不能提交
+/data/
+state.json
+metrics.json
+initial-password.txt
+*.env
