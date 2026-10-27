@@ -86,3 +86,15 @@ func TestMigrateSingleIP(t *testing.T) {
 		}
 	})
 }
+
+func TestCFPortAllowedOutsideRange(t *testing.T) {
+	set := Settings{PortMin: 20000, PortMax: 29999}
+	r := Rule{ListenPort: 2083, TargetPort: 2083, Target: "1.2.3.4", Protocol: "tcp", Mode: "direct"}
+	if err := validateRule(&r, set); err != nil {
+		t.Fatal("Cloudflare 端口应允许", err)
+	}
+	r.ListenPort = 3000
+	if err := validateRule(&r, set); err == nil {
+		t.Fatal("范围外的普通端口应拒绝")
+	}
+}

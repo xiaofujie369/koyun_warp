@@ -824,6 +824,9 @@ func (s *Server) saveRule(w http.ResponseWriter, r *http.Request) {
 		if n, taken := used[in.ListenPort]; taken {
 			return fmt.Errorf("端口 %d 已被该节点的规则「%s」占用", in.ListenPort, n)
 		}
+		if n := st.node(in.NodeID); n != nil && n.CDNEnabled && n.CDNPort == in.ListenPort && in.Protocol != "udp" {
+			return fmt.Errorf("端口 %d 已被该节点的 CDN 出口占用", in.ListenPort)
+		}
 		if err := validateRule(&in, set); err != nil {
 			return err
 		}

@@ -26,6 +26,12 @@ import (
 // Cloudflare 代理 HTTPS 时支持的源站端口。
 var cdnPorts = map[int]bool{443: true, 2053: true, 2083: true, 2087: true, 2096: true, 8443: true}
 
+// Cloudflare 代理时允许的全部源站端口（HTTPS 与 HTTP），转发规则的监听端口可以使用它们。
+var cfProxyPorts = map[int]bool{443: true, 2053: true, 2083: true, 2087: true, 2096: true, 8443: true,
+	80: true, 8080: true, 8880: true, 2052: true, 2082: true, 2086: true, 2095: true}
+
+const cfProxyPortList = "HTTPS 443/2053/2083/2087/2096/8443，HTTP 80/8080/8880/2052/2082/2086/2095"
+
 const cdnPathPrefix = "/kw-cdn/"
 
 // CDNExitCfg 是下发给 CDN 出口节点的配置。

@@ -52,8 +52,9 @@ func validateRule(r *Rule, s Settings) error {
 	if r.ListenPort < 1 || r.ListenPort > 65535 || r.TargetPort < 1 || r.TargetPort > 65535 {
 		return errors.New("端口必须在 1-65535 之间")
 	}
-	if s.PortMin > 0 && (r.ListenPort < s.PortMin || r.ListenPort > s.PortMax) {
-		return fmt.Errorf("监听端口需在允许范围 %d-%d 内", s.PortMin, s.PortMax)
+	// Cloudflare 能代理的端口不受范围限制：入口 IP 被墙时，可以让橙色云朵域名经这些端口回源到入口
+	if s.PortMin > 0 && (r.ListenPort < s.PortMin || r.ListenPort > s.PortMax) && !cfProxyPorts[r.ListenPort] {
+		return fmt.Errorf("监听端口需在允许范围 %d-%d 内，或使用 Cloudflare 支持的端口（%s）", s.PortMin, s.PortMax, cfProxyPortList)
 	}
 	if r.Target == "" || len(r.Target) > 253 {
 		return errors.New("目标地址无效")

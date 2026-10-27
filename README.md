@@ -66,6 +66,18 @@
 每条连接都要新建一次 WSS 握手，所以建连比 WARP 慢 100～150ms，建好之后速度取决于 Cloudflare 线路。
 免费 CDN 承载大流量代理有被 Cloudflare 限制的风险，建议作为 WARP 不可用时的备用线路。
 
+## 入口 IP 被墙：用户经 Cloudflare 连入口
+
+```text
+用户 ──> Cloudflare（橙色云朵域名:2083）──> 入口节点 :2083 ──直连/WARP──> 落地节点（WS + TLS）
+```
+
+1. 落地节点改用 **WS / gRPC / HTTPUpgrade + TLS** 协议。Reality、AnyTLS、Trojan-TCP、Hysteria2、TUIC 都过不了 Cloudflare。
+2. 给入口机加一个**橙色云朵**域名，或复用它的 CDN 出口域名。
+3. 规则的监听端口用 Cloudflare 支持的端口：443/2053/2083/2087/8443，HTTP 为 80/8080/8880/2052/2082/2086/2095。这些端口不受「监听端口范围」限制，但不能与本机 CDN 出口的端口相同。
+4. Cloudflare 的 SSL 模式为「完全（严格）」时，落地节点的证书必须对这个橙色域名有效，例如 Cloudflare 源服务器证书。
+5. Xboard 节点地址填橙色域名或优选 IP，端口填规则端口；TLS 的 SNI、WS 的 Host 都填橙色域名。优选 IP 要在**国内**测。
+
 ## 域名建议
 
 | 用途 | 建议 | 原因 |

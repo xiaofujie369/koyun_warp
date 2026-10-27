@@ -564,6 +564,7 @@ function ruleModal(r) {
     <div class="row3"><label>目标地址（落地节点 IP / 域名）<input name="target" value="${esc(r.target)}" required placeholder="179.255.111.112"></label><label>目标端口<input name="target_port" type="number" min="1" max="65535" value="${esc(r.target_port)}" required></label></div>
     <div class="row2"><label>监听端口<input name="listen_port" type="number" min="1" max="65535" value="${esc(r.listen_port)}" placeholder="留空自动分配"></label>
       <label>协议<select name="protocol">${Object.entries(PROTO).map(([k, v]) => `<option value="${k}" ${r.protocol === k ? "selected" : ""}>${v}</option>`).join("")}</select></label></div>
+    <p class="hint">入口 IP 被墙时：监听端口填 Cloudflare 支持的端口（2053 / 2083 / 2087 / 8443 / 443），给入口机配一个<b>橙色云朵</b>域名，用户经 Cloudflare 连入口。此时落地节点必须是 WS / gRPC / HTTPUpgrade + TLS 协议，证书要对该域名有效（例如 Cloudflare 源服务器证书）。</p>
     <div class="row2"><label>出站方式<select name="mode">${Object.entries(MODE).map(([k, v]) => `<option value="${k}" ${r.mode === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
       <label id="tunWrap">隧道<select name="tunnel_id"></select></label>
       <label id="cdnWrap">CDN 出口节点<select name="cdn_exit_id">${state.ov.nodes.filter((n) => n.cdn_enabled).map((n) => `<option value="${esc(n.id)}" ${r.cdn_exit_id === n.id ? "selected" : ""}>${esc(n.name)}（${esc(n.cdn_domain)}）</option>`).join("") || `<option value="">（还没有节点开启 CDN 出口）</option>`}</select></label></div>
