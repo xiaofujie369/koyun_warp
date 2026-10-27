@@ -880,6 +880,11 @@ func (s *Server) deleteRule(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var name string
 	err := s.app.store.Update(func(st *State) error {
+		for _, l := range st.CDNLines {
+			if l.RuleID == id {
+				return fmt.Errorf("这条规则被 CDN 线路「%s」使用，请先在「CDN 接入」页修改或删除该线路", l.Name)
+			}
+		}
 		for i, x := range st.Rules {
 			if x.ID == id {
 				name = x.Name

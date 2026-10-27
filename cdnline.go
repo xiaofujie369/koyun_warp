@@ -19,18 +19,22 @@ import (
 // 用户直接连 Cloudflare，适合入口和落地 IP 都被墙的情况；流量不经过任何 Agent，
 // 面板只负责记录配置、生成 Xboard 填写项和定时检测。
 type CDNLine struct {
-	ID        string       `json:"id"`
-	Name      string       `json:"name"`
-	Protocol  string       `json:"protocol"` // trojan | vless | vmess，仅用于展示
-	Origin    string       `json:"origin"`   // 落地节点 IP 或域名
-	Port      int          `json:"port"`     // 用户连接端口，也是 Cloudflare 回源端口
-	Domain    string       `json:"domain"`   // 橙色云朵域名，填在 SNI 与 Host
-	Path      string       `json:"path"`     // WebSocket 路径
-	Address   string       `json:"address"`  // 用户连接地址（灰色云朵的优选域名），可空
-	IPs       []string     `json:"ips"`      // 优选 IP，应与 Address 的 A 记录一致
-	Remark    string       `json:"remark"`
-	CreatedAt int64        `json:"created_at"`
-	Test      *CDNLineTest `json:"test,omitempty"`
+	ID         string       `json:"id"`
+	Name       string       `json:"name"`
+	Protocol   string       `json:"protocol"`    // trojan | vless | vmess，仅用于展示
+	Origin     string       `json:"origin"`      // 落地节点 IP 或域名
+	Port       int          `json:"port"`        // 用户连接端口，也是 Cloudflare 回源端口
+	ViaNodeID  string       `json:"via_node_id"` // 可选：Cloudflare 回源到这个入口节点，再由它转发到落地（面板可统计流量）
+	OriginPort int          `json:"origin_port"` // 落地节点端口；不经中转时必须等于 Port
+	RuleID     string       `json:"rule_id"`     // 经中转时对应的转发规则
+	RuleAuto   bool         `json:"rule_auto"`   // 规则由本线路自动创建，删除线路时一并删除
+	Domain     string       `json:"domain"`      // 橙色云朵域名，填在 SNI 与 Host
+	Path       string       `json:"path"`        // WebSocket 路径
+	Address    string       `json:"address"`     // 用户连接地址（灰色云朵的优选域名），可空
+	IPs        []string     `json:"ips"`         // 优选 IP，应与 Address 的 A 记录一致
+	Remark     string       `json:"remark"`
+	CreatedAt  int64        `json:"created_at"`
+	Test       *CDNLineTest `json:"test,omitempty"`
 }
 
 type CDNLineTest struct {
@@ -231,7 +235,8 @@ func TestCDNLine(l CDNLine) *CDNLineTest {
 		verify                  bool
 	}
 	var jobs []job
-	jobs = append(jobs, job{"origin", net.JoinHostPort(l.Origin, port), net.JoinHostPort(l.Origin, port), l.Domain, false})
+	op := fmt.Sprint(l.OriginPort)
+	jobs = append(jobs, job{"origin", net.JoinHostPort(l.Origin, op), net.JoinHostPort(l.Origin, op), l.Domain, false})
 	if len(l.IPs) == 0 {
 		jobs = append(jobs, job{"dns", l.Domain, net.JoinHostPort(l.Domain, port), l.Domain, true})
 	}
@@ -294,6 +299,12 @@ func validateCDNLine(l *CDNLine) error {
 	}
 	if !cdnPorts[l.Port] {
 		return errors.New("端口必须是 Cloudflare 支持的 HTTPS 端口：443、2053、2083、2087、2096、8443")
+	}
+	if l.ViaNodeID == "" || l.OriginPort == 0 {
+		l.OriginPort = l.Port // 不经中转时 Cloudflare 直接回源到落地，端口只能相同
+	}
+	if l.OriginPort < 1 || l.OriginPort > 65535 {
+		return errors.New("落地端口无效")
 	}
 	if l.Domain == "" || validHost(l.Domain) != nil || !strings.Contains(l.Domain, ".") || net.ParseIP(l.Domain) != nil {
 		return errors.New("请填写开了橙色云朵的域名")

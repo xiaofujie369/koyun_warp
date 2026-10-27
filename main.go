@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var version = "2.2.0"
+var version = "2.2.1"
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "agent" {

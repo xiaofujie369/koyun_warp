@@ -716,6 +716,12 @@ func maskKey(k string) string {
 // migrate 把单机版（v1）遗留的隧道和规则归到一个「本机」节点下。
 func (a *App) migrate() {
 	a.store.Update(func(st *State) error {
+		// 2.2.1：CDN 线路增加落地端口，旧数据与用户端口相同
+		for _, l := range st.CDNLines {
+			if l.OriginPort == 0 {
+				l.OriginPort = l.Port
+			}
+		}
 		// 2.1.4：单个优选 IP 改为列表
 		for _, n := range st.Nodes {
 			if n.CDNConnectIP != "" && len(n.CDNConnectIPs) == 0 {

@@ -664,7 +664,7 @@ PAGES.events = async (v) => {
   $$(".seg button", v).forEach((b) => (b.onclick = () => { state.evFilter = b.dataset.f; render(); }));
 };
 
-// ---------- CDN 接入（用户 → Cloudflare → 落地节点） ----------
+// ---------- CDN 接入（用户 → Cloudflare →（入口节点）→ 落地节点） ----------
 const CDNPROTO = { trojan: "Trojan", vless: "VLESS", vmess: "VMess" };
 const lvlColor = { ok: "var(--ok)", warn: "var(--warn)", bad: "var(--bad)" };
 const lvlIcon = { ok: "✓", warn: "!", bad: "✕" };
@@ -672,16 +672,18 @@ const lvlIcon = { ok: "✓", warn: "!", bad: "✕" };
 PAGES.cdn = async (v) => {
   const ls = state.cdnLines || [];
   v.innerHTML = `
-  <div class="note"><b>适用场景：落地节点 IP 被墙。</b>用户的客户端直接连 Cloudflare，Cloudflare 再转给落地节点，流量不经过面板和任何入口 VPS。面板负责记录配置、给出 Xboard 的填写值，并每 10 分钟自动检测，有优选 IP 失效时会告警。
+  <div class="note"><b>适用场景：落地节点 IP 被墙。</b>用户的客户端先连 Cloudflare，再由 Cloudflare 转发进来。线路有两种：
+    <br>· <b>直达落地</b>：Cloudflare 直接连落地节点，延迟最低，但流量不经过面板，<b>面板看不到流量</b>（去 Xboard 看节点流量）。
+    <br>· <b>经入口节点中转</b>：Cloudflare 先连一台装了 Agent 的机器，再由它转发到落地。<b>面板能看到实时连接数和流量</b>，代价是多一跳。
     <details style="margin-top:8px"><summary style="cursor:pointer"><b>第一次配置？点这里看完整步骤</b></summary>
     <ol style="margin:8px 0 0 18px;line-height:1.9">
-      <li><b>落地节点</b>：在 Xboard 把节点改成 <b>WS + TLS</b>（Trojan / VLESS / VMess 均可）。端口选 Cloudflare 支持的 <span class="mono">443 / 2053 / 2083 / 2087 / 2096 / 8443</span>。在「编辑协议」里点「随机」生成路径。Reality、AnyTLS、Hysteria2、TUIC 都过不了 Cloudflare。</li>
+      <li><b>落地节点</b>：在 Xboard 把节点改成 <b>WS + TLS</b>（Trojan / VLESS / VMess 均可）。在「编辑协议」里点「随机」生成路径。Reality、AnyTLS、Hysteria2、TUIC 都过不了 Cloudflare。</li>
       <li><b>Cloudflare 加两条记录</b>：
-        <br>① CDN 域名（如 <span class="mono">bagecdn.example.com</span>）→ 落地 IP，<b>橙色云朵</b>；
-        <br>② 优选域名（如 <span class="mono">cfyx.example.com</span>）→ 每个优选 IP 一条 A 记录，<b>灰色云朵</b>。可以不设，客户端就直接连 CDN 域名。</li>
-      <li><b>在这里新建线路</b>：填入上面的值，保存后点「测试」。所有项都显示 ✓ 后再继续。</li>
-      <li><b>回到 Xboard</b>：按卡片里的「Xboard 填写」逐项填写，然后把节点设为显示。用户更新订阅即可使用。</li>
-      <li><b>选优选 IP</b>：要<b>在国内电脑上</b>用 CloudflareSpeedTest 测，端口设成线路端口。把测出的 IP 填到这里，点「测试」验证后再加进优选域名的 A 记录。面板本身在海外，它的测试只能说明这个 IP 能用，不能说明国内速度快。</li>
+        <br>① CDN 域名，<b>橙色云朵</b>。直达落地就指向落地 IP；经中转就指向中转机 IP。
+        <br>② 优选域名（如 <span class="mono">cfyx.example.com</span>），<b>灰色云朵</b>，每个优选 IP 一条 A 记录。同一组优选 IP 可以给多条线路共用。</li>
+      <li><b>在这里新建线路</b>。经中转时选好中转节点，面板会自动在那台机器上建好转发规则。保存后会自动测试，所有项都显示 ✓ 再继续。</li>
+      <li><b>回到 Xboard</b>：按卡片里的「Xboard 填写」逐项填写。同一个落地节点再加一条线路时，新建一个「父节点」为原节点的子节点，用户密码和流量都沿用父节点。</li>
+      <li><b>选优选 IP</b>：要在<b>国内电脑上</b>用 CloudflareSpeedTest 测，端口设成线路端口。面板在海外，它的测试只能说明这个 IP 能用，不能说明国内速度快。</li>
     </ol></details>
   </div>
   <div class="toolbar"><button class="btn primary" id="newCdn">＋ 新建 CDN 线路</button><span class="grow"></span></div>
@@ -689,23 +691,66 @@ PAGES.cdn = async (v) => {
   $("#newCdn").onclick = () => cdnModal();
   $$("[data-cdn]", v).forEach((b) => (b.onclick = () => cdnAction(b, b.dataset.cdn, b.dataset.op)));
   $$("[data-copy]", v).forEach((b) => (b.onclick = () => { navigator.clipboard?.writeText(b.dataset.copy).then(() => toast("已复制 " + b.dataset.copy)).catch(() => toast(b.dataset.copy)); }));
+  for (const l of ls) {
+    const el = $(`#cdnChart-${l.id}`);
+    if (el && l.rule_id) api(`/series?key=${encodeURIComponent("rule:" + l.rule_id)}&range=1h`).then((pts) => lineChart(el, pts, trafficSeries().map((s) => ({ ...s, key: s.key.replace("fwd_", "") })), { height: 160 })).catch(() => {});
+  }
 };
+
+// 流程图：每一跳一个方框，标出流量在哪里被统计
+function cdnFlow(l) {
+  const via = l.via_node_id && state.ov.nodes.find((n) => n.id === l.via_node_id);
+  const box = (title, main, sub, hl) => `<div class="flow-box${hl ? " hl" : ""}"><span class="flow-t">${title}</span><b class="mono">${esc(main)}</b>${sub ? `<span class="flow-s">${sub}</span>` : ""}</div>`;
+  const arrow = (t) => `<div class="flow-arrow"><span>${t}</span></div>`;
+  const parts = [
+    box("① 用户客户端", "Xboard 订阅", "连接下一格的地址"),
+    arrow("TLS"),
+    box("② 优选 IP", l.address || l.domain, l.ips.length ? `${l.ips.length} 个 Cloudflare IP，灰色云朵` : "按域名解析"),
+    arrow(`:${l.port}`),
+    box("③ Cloudflare", l.domain, "橙色云朵；按 SNI / Host 找到这条线路"),
+    arrow(`:${l.port}`),
+  ];
+  if (l.via_node_id) parts.push(box("④ 中转（面板统计流量）", via ? via.name : "节点已删除", `入口 :${l.port} → 直连转发`, true), arrow(`:${l.origin_port}`));
+  parts.push(box(l.via_node_id ? "⑤ 落地节点" : "④ 落地节点", `${l.origin}:${l.origin_port}`, `WS 路径 ${esc(l.path)}，最终从这里出网`));
+  return `<div class="flow">${parts.join("")}</div>`;
+}
+
+function cdnTraffic(l) {
+  if (!l.via_node_id) return `<div class="hint" style="margin:0">这条线路直达落地，流量不经过面板管理的机器，所以<b>这里看不到流量</b>。要看流量可以去 Xboard 的节点管理，或者另建一条「经入口节点中转」的线路。</div>`;
+  const x = state.ov.rules.find((r) => r.rule.id === l.rule_id);
+  if (!x) return `<div class="hint" style="margin:0;color:var(--bad)">中转规则不存在，请编辑线路后重新保存。</div>`;
+  const rt = x.rt || {};
+  const last = x.offline ? pill("unknown", "节点离线") : !x.rt || rt.status === "unknown" ? pill("unknown", "等待节点同步") : rt.listen_err ? pill("down", "监听失败：" + rt.listen_err) : pill("up", "转发中");
+  return `<div class="kv" style="margin-bottom:10px">
+      <div><span>中转状态</span><div style="margin-top:3px">${last}</div></div>
+      <div><span>当前连接</span><b>${rt.active ?? 0}</b></div>
+      <div><span>累计连接 / 失败</span><b>${rt.total_conns ?? 0} / ${rt.failed_conns ?? 0}</b></div>
+      <div><span>累计上行（用户→落地）</span><b>${fmtBytes(x.total_up)}</b></div>
+      <div><span>累计下行（落地→用户）</span><b>${fmtBytes(x.total_down)}</b></div>
+      <div><span>中转规则</span><b><a href="#/rules">${esc(x.rule.name)}</a></b></div>
+    </div>
+    <div id="cdnChart-${esc(l.id)}"></div>
+    <p class="hint">每 5 秒刷新。曲线是近 1 小时经中转机的实时速率。用户用这条线路上网时，这里就会有数据。</p>`;
+}
 
 function cdnCard(l) {
   const t = l.test;
   const st = !t ? pill("unknown", "未测试") : t.ok ? pill("up", "全部可用") : pill("down", "有问题");
   const addr = l.address || l.domain;
   const xb = [
-    ["节点地址", addr], ["连接端口", l.port], ["服务端端口", l.port], ["TLS", "开启"], ["SNI（server_name）", l.domain],
+    ["节点地址", addr], ["连接端口", l.port], ["服务端端口", l.origin_port], ["TLS", "开启"], ["SNI（server_name）", l.domain],
     ["传输协议", "WebSocket"], ["WS 路径", l.path], ["WS Host", l.domain],
   ];
   const ok = t ? t.items.filter((i) => i.kind !== "origin" && i.ok).length : 0, total = t ? t.items.filter((i) => i.kind !== "origin").length : 0;
   return `<div class="card" style="margin-bottom:14px">
-  <div class="card-h"><h3>${esc(l.name)} <span class="sub" style="display:inline;margin-left:6px">${CDNPROTO[l.protocol] || ""} · WS + TLS</span></h3>
+  <div class="card-h"><h3>${esc(l.name)} <span class="sub" style="display:inline;margin-left:6px">${CDNPROTO[l.protocol] || ""} · WS + TLS · ${l.via_node_id ? "经中转" : "直达落地"}</span></h3>
     <div class="acts">${st}<button class="btn sm primary" data-cdn="${esc(l.id)}" data-op="test">测试</button><button class="btn sm" data-cdn="${esc(l.id)}" data-op="edit">编辑</button><button class="btn sm danger" data-cdn="${esc(l.id)}" data-op="delete">删除</button></div></div>
   <div class="card-b">
-    <div class="mono" style="font-size:13px;margin-bottom:12px;line-height:1.8">用户 → <b>${esc(addr)}:${l.port}</b>${l.ips.length ? `（${l.ips.length} 个优选 IP）` : ""} → Cloudflare（SNI / Host：${esc(l.domain)}）→ 落地 <b>${esc(l.origin)}:${l.port}</b>${esc(l.path)}</div>
-    <div class="grid cdn-cols">
+    <h4 style="margin:0 0 8px">流量怎么走</h4>
+    ${cdnFlow(l)}
+    <h4 style="margin:16px 0 8px">流量统计</h4>
+    ${cdnTraffic(l)}
+    <div class="grid cdn-cols" style="margin-top:16px">
       <div><h4 style="margin:0 0 8px">Xboard 填写</h4>
         <div class="xbf">${xb.map(([k, val]) => `<div class="xbf-row"><span class="xbf-k">${k}</span><span class="xbf-v mono">${esc(val)}</span><button class="btn sm ghost" data-copy="${esc(val)}" title="复制">复制</button></div>`).join("")}</div>
         <p class="hint">Xboard 节点编辑：传输协议选 WebSocket，点旁边的「路径：… · 编辑协议」，填入路径和 Host。${l.remark ? "<br>备注：" + esc(l.remark) : ""}</p>
@@ -715,7 +760,7 @@ function cdnCard(l) {
         <div class="tbl-wrap"><table class="rtable"><thead><tr><th>经</th><th>结果</th><th>耗时</th><th>说明</th></tr></thead><tbody>
         ${t.items.map((i) => `<tr><td data-l="经" class="mono">${i.kind === "origin" ? "落地直连" : esc(i.target)}${i.colo ? `<span class="sub">机房 ${esc(i.colo)}</span>` : ""}</td><td data-l="结果">${i.ok ? pill("up", "可用") : pill(i.kind === "origin" ? "unknown" : "down", i.kind === "origin" ? "未通过" : "失败")}</td><td data-l="耗时">${i.ok ? fmtMs(i.ms) : "—"}</td><td data-l="说明" style="font-size:12px">${esc(i.msg)}</td></tr>`).join("")}
         </tbody></table></div>
-        <p class="hint">耗时为面板所在机器（日本）完成 TLS + WebSocket 握手的时间，不代表国内速度。「落地直连」用来确认路径，落地节点如果只对 Cloudflare 开放，可以忽略这一项。</p>`
+        <p class="hint">耗时是面板所在机器（日本）完成 TLS + WebSocket 握手的时间，不代表国内速度。「落地直连」用来确认路径；如果落地节点只对 Cloudflare 开放，这一项可以忽略。</p>`
         : `<div class="empty" style="padding:18px">保存后点「测试」</div>`}
       </div>
     </div>
@@ -724,34 +769,46 @@ function cdnCard(l) {
 
 function cdnModal(l) {
   const edit = !!l;
-  l = l || { protocol: "trojan", port: 2053, path: "", ips: [] };
+  l = l || { protocol: "trojan", port: 2053, origin_port: 2053, path: "", ips: [], via_node_id: "" };
   modal(`<h3>${edit ? "编辑" : "新建"} CDN 线路</h3><form id="f">
     <div class="row2"><label>名称<input name="name" value="${esc(l.name)}" placeholder="例如：BAGE 日本 CF" maxlength="64" required></label>
       <label>协议（与 Xboard 节点一致）<select name="protocol">${Object.entries(CDNPROTO).map(([k, x]) => `<option value="${k}" ${l.protocol === k ? "selected" : ""}>${x} + WS + TLS</option>`).join("")}</select></label></div>
+    <label>线路类型 / 中转节点<select name="via_node_id"><option value="">直达落地（不经过面板，看不到流量）</option>${state.ov.nodes.map((n) => `<option value="${esc(n.id)}" ${l.via_node_id === n.id ? "selected" : ""}>经 ${esc(n.name)} 中转（面板可看流量）</option>`).join("")}</select></label>
     <div class="row3"><label>落地节点 IP / 域名<input name="origin" value="${esc(l.origin)}" placeholder="209.33.174.150" required></label>
-      <label>端口<select name="port">${[2053, 2083, 2087, 2096, 8443, 443].map((p) => `<option ${Number(l.port) === p ? "selected" : ""}>${p}</option>`).join("")}</select></label></div>
-    <label>CDN 域名（<b>橙色云朵</b>，指向落地 IP；填在 SNI 和 Host）<input name="domain" value="${esc(l.domain)}" placeholder="bagecdn.example.com" required></label>
+      <label id="opWrap">落地端口<input name="origin_port" type="number" min="1" max="65535" value="${esc(l.origin_port || l.port)}"></label></div>
+    <label>用户连接端口（Cloudflare 端口；经中转时也是中转机的监听端口）<select name="port">${[2053, 2083, 2087, 2096, 8443, 443].map((p) => `<option ${Number(l.port) === p ? "selected" : ""}>${p}</option>`).join("")}</select></label>
+    <label><span id="domLabel">CDN 域名</span><input name="domain" value="${esc(l.domain)}" placeholder="bagecdn.example.com" required></label>
     <div class="row2"><label style="flex:1">WS 路径（必须与 Xboard 节点一致）<input name="path" value="${esc(l.path)}" placeholder="/"></label>
       <label style="flex:0 0 auto;align-self:flex-end"><button type="button" class="btn" id="rndPath">随机</button></label></div>
-    <label>用户连接地址（可选，<b>灰色云朵</b>的优选域名；留空则客户端直接连 CDN 域名）<input name="address" value="${esc(l.address)}" placeholder="cfyx.example.com"></label>
+    <label>用户连接地址（可选，<b>灰色云朵</b>的优选域名，比如 cfyx；留空则客户端直接连 CDN 域名）<input name="address" value="${esc(l.address)}" placeholder="cfyx.example.com"></label>
     <label>优选 IP（可选，每行一个；应与优选域名的 A 记录一致，测试时逐个检测）<textarea name="ips" rows="${Math.max(3, (l.ips || []).length + 1)}" placeholder="（未填写）">${esc((l.ips || []).join("\n"))}</textarea></label>
     <label>备注<input name="remark" value="${esc(l.remark)}" maxlength="200"></label>
-    <p class="hint">修改了随机路径的话，Xboard 节点里的路径也要同步修改。落地节点会自动拉取新路径，用户需要更新订阅。</p>
+    <p class="hint" id="viaHint"></p>
   </form>`, async (f, btn) => {
-    const body = { name: f.name.value, protocol: f.protocol.value, origin: f.origin.value, port: Number(f.port.value), domain: f.domain.value, path: f.path.value, address: f.address.value, ips: ipList(f.ips.value), remark: f.remark.value };
+    const body = { name: f.name.value, protocol: f.protocol.value, via_node_id: f.via_node_id.value, origin: f.origin.value, origin_port: Number(f.origin_port.value), port: Number(f.port.value), domain: f.domain.value, path: f.path.value, address: f.address.value, ips: ipList(f.ips.value), remark: f.remark.value };
     const r = await act(btn, () => api(edit ? `/cdnlines/${l.id}` : "/cdnlines", { method: edit ? "PUT" : "POST", body }), "已保存，正在测试…");
     if (!r) return false;
     api(`/cdnlines/${r.id}/test`, { method: "POST" }).then(() => refresh(true)).catch((e) => toast(e.message, true));
     return true;
   });
-  $("#rndPath").onclick = () => { $("#f").path.value = "/" + Math.random().toString(36).slice(2, 12); };
+  const f = $("#f");
+  const sync = () => {
+    const via = f.via_node_id.value, n = state.ov.nodes.find((x) => x.id === via);
+    $("#opWrap").classList.toggle("hidden", !via);
+    if (!via) f.origin_port.value = f.port.value;
+    $("#domLabel").innerHTML = via ? `CDN 域名（<b>橙色云朵</b>，指向中转机 ${esc(n ? n.name : "")} 的 IP；填在 SNI 和 Host）` : `CDN 域名（<b>橙色云朵</b>，指向落地 IP；填在 SNI 和 Host）`;
+    $("#viaHint").innerHTML = via ? `保存后，面板会自动在「${esc(n ? n.name : "")}」上建一条规则：监听 ${f.port.value} → 落地 ${esc(f.origin.value || "…")}:${f.origin_port.value}（直连）。如果已有相同规则，就直接复用。修改了路径的话，Xboard 节点也要同步修改。` : "Cloudflare 回源时用的端口和用户连接端口相同，所以落地节点必须监听这个端口。修改了路径的话，Xboard 节点也要同步修改。";
+  };
+  ["via_node_id", "port", "origin", "origin_port"].forEach((k) => f[k].addEventListener(k === "origin" || k === "origin_port" ? "input" : "change", sync));
+  sync();
+  $("#rndPath").onclick = () => { f.path.value = "/" + Math.random().toString(36).slice(2, 12); };
 }
 
 async function cdnAction(btn, id, op) {
   const l = (state.cdnLines || []).find((x) => x.id === id);
   if (!l) return;
   if (op === "edit") return cdnModal(l);
-  if (op === "delete") { if (!confirm(`删除线路「${l.name}」？只删除面板里的记录，不影响 Xboard 和 Cloudflare。`)) return; return act(btn, () => api(`/cdnlines/${id}`, { method: "DELETE" }), "已删除"); }
+  if (op === "delete") { if (!confirm(`删除线路「${l.name}」？${l.rule_auto ? "面板自动创建的中转规则也会一起删除。" : ""}不影响 Xboard 和 Cloudflare。`)) return; return act(btn, () => api(`/cdnlines/${id}`, { method: "DELETE" }), "已删除"); }
   if (op === "test") {
     btn.disabled = true; btn.textContent = "测试中…";
     try { const t = await api(`/cdnlines/${id}/test`, { method: "POST" }); toast(t.ok ? "全部可用" : "有项目未通过，见检测结果", !t.ok); } catch (e) { toast(e.message, true); }
