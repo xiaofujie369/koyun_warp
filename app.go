@@ -759,6 +759,7 @@ func (a *App) Boot() {
 	go a.loopOffline()
 	go a.loopAccounts()
 	go a.loopPersist()
+	go a.loopCDNLines()
 }
 
 func (a *App) loopOffline() {

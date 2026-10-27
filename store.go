@@ -118,12 +118,13 @@ type Event struct {
 }
 
 type State struct {
-	Settings Settings  `json:"settings"`
-	Nodes    []*Node   `json:"nodes"`
-	Tunnels  []*Tunnel `json:"tunnels"`
-	Keys     []*Key    `json:"keys"`
-	Rules    []*Rule   `json:"rules"`
-	Events   []Event   `json:"events"`
+	Settings Settings   `json:"settings"`
+	Nodes    []*Node    `json:"nodes"`
+	Tunnels  []*Tunnel  `json:"tunnels"`
+	Keys     []*Key     `json:"keys"`
+	Rules    []*Rule    `json:"rules"`
+	CDNLines []*CDNLine `json:"cdn_lines"`
+	Events   []Event    `json:"events"`
 }
 
 type Store struct {

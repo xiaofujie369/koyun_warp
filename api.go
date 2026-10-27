@@ -86,6 +86,12 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /kw/i/{token}", s.installScript)
 	mux.HandleFunc("GET /kw/i/{token}/bin/{arch}", s.installBinary)
 
+	mux.HandleFunc("GET /kw/cdnlines", s.auth(s.listCDNLines))
+	mux.HandleFunc("POST /kw/cdnlines", s.auth(s.saveCDNLine))
+	mux.HandleFunc("PUT /kw/cdnlines/{id}", s.auth(s.saveCDNLine))
+	mux.HandleFunc("DELETE /kw/cdnlines/{id}", s.auth(s.deleteCDNLine))
+	mux.HandleFunc("POST /kw/cdnlines/{id}/test", s.auth(s.testCDNLine))
+
 	mux.HandleFunc("GET /kw/settings", s.auth(s.getSettings))
 	mux.HandleFunc("PUT /kw/settings", s.auth(s.putSettings))
 	mux.HandleFunc("POST /kw/password", s.auth(s.changePassword))

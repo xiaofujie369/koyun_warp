@@ -13,7 +13,7 @@ import (
 const (
 	cdnIPCooldown = 60 * time.Second // 某个优选 IP 失败后暂停使用的时间，连续失败时翻倍
 	cdnIPMaxCool  = 10 * time.Minute
-	cdnMaxTries   = 3                // 一条连接最多换几个 IP 重试
+	cdnMaxTries   = 3 // 一条连接最多换几个 IP 重试
 	cdnMaxIPs     = 20
 )
 

@@ -190,3 +190,9 @@ td.acts .btn { margin: 2px 0 2px 3px; }
   .rtable td.acts::before { display: none; }
   .toolbar input, .toolbar select { min-width: 0; flex: 1; }
 }
+.cdn-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); }
+@media (max-width: 1100px) { .cdn-cols { grid-template-columns: minmax(0, 1fr); } }
+.xbf-row { display: grid; grid-template-columns: minmax(84px, 36%) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 2px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.xbf-row:last-child { border-bottom: none; }
+.xbf-k { color: var(--muted); }
+.xbf-v { overflow-wrap: anywhere; }
