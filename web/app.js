@@ -299,7 +299,7 @@ function nodeModal(n) {
     <label>入口地址（用户连接用，填入 Xboard 的节点地址）<input name="public_host" value="${esc(n.public_host)}" placeholder="建议仅 DNS（灰色云朵）的域名，如 gz1.example.com"></label>
     <label>备注<input name="remark" value="${esc(n.remark)}" maxlength="200"></label>
     <p class="hint">入口地址用域名的好处：入口机被墙或更换时只需改 DNS，Xboard 和用户订阅都不用动。该域名不能开 Cloudflare 代理，因为转发端口不在 CDN 支持范围内。</p>
-    <label>CDN 优选 IP（可选，本节点作为入口走 CDN 时使用；每行一个，最多 20 个，新连接在其间轮询）<textarea name="cdn_prefer_ips" placeholder="留空则使用出口节点上的设置，再没有就按域名解析&#10;104.17.1.1&#10;104.18.2.2" style="min-height:70px">${esc((n.cdn_prefer_ips || []).join("\n"))}</textarea></label>
+    <label>CDN 优选 IP（可选，本节点作为入口走 CDN 时使用；每行一个，最多 20 个，新连接在其间轮询）<textarea name="cdn_prefer_ips" placeholder="（未填写）留空则使用出口节点上的设置，再没有就按域名解析" rows="${Math.max(3, (n.cdn_prefer_ips || []).length + 1)}">${esc((n.cdn_prefer_ips || []).join("\n"))}</textarea></label>
     ${ipStatus(n)}
     <p class="hint">优选 IP 只影响「本入口 → Cloudflare」这一段。海外入口一般留空；国内入口请在本机上测速，并用 curl --resolve 验证返回 404 后再填。</p>
     <h4 style="margin:18px 0 8px">Cloudflare CDN 出口（可选）</h4>
@@ -307,7 +307,7 @@ function nodeModal(n) {
     <div id="cdnBox">
       <div class="row3"><label>CDN 域名（橙色云朵，指向本节点 IP）<input name="cdn_domain" value="${esc(n.cdn_domain)}" placeholder="cdn.example.com"></label>
         <label>端口<select name="cdn_port">${[2096, 2053, 2083, 2087, 8443, 443].map((p) => `<option ${Number(n.cdn_port || 2096) === p ? "selected" : ""}>${p}</option>`).join("")}</select></label></div>
-      <label>默认优选 IP（可选，每行一个；经本出口、自己没设置优选 IP 的入口使用，留空按域名解析）<textarea name="cdn_connect_ips" placeholder="104.17.1.1&#10;104.18.2.2" style="min-height:60px">${esc((n.cdn_connect_ips || []).join("\n"))}</textarea></label>
+      <label>默认优选 IP（可选，每行一个；经本出口、自己没设置优选 IP 的入口使用，留空按域名解析）<textarea name="cdn_connect_ips" placeholder="（未填写）一般留空，由各入口节点自己设置" rows="${Math.max(2, (n.cdn_connect_ips || []).length + 1)}">${esc((n.cdn_connect_ips || []).join("\n"))}</textarea></label>
       <label>源站证书（可选，PEM。Cloudflare SSL 模式为「完全（严格）」时必填）${n.cdn_cert_info ? `<span class="sub" style="color:var(--ok)">当前：${esc(n.cdn_cert_info)}</span>` : ""}<textarea name="cdn_cert" placeholder="-----BEGIN CERTIFICATE-----（留空保持不变）" style="min-height:70px"></textarea></label>
       <label>证书私钥（PEM）<textarea name="cdn_key" placeholder="-----BEGIN PRIVATE KEY-----" style="min-height:70px"></textarea></label>
       ${n.cdn_cert_info ? `<label class="check"><input type="checkbox" name="cdn_cert_clear"> 清除已上传的证书，改用自签证书</label>` : ""}
