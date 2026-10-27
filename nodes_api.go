@@ -72,16 +72,16 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) {
 func (s *Server) patchNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req struct {
-		Name         *string `json:"name"`
-		PublicHost   *string `json:"public_host"`
-		Remark       *string `json:"remark"`
-		CDNEnabled   *bool   `json:"cdn_enabled"`
-		CDNDomain    *string `json:"cdn_domain"`
-		CDNPort      *int    `json:"cdn_port"`
-		CDNConnectIP *string `json:"cdn_connect_ip"`
-		CDNPreferIP  *string `json:"cdn_prefer_ip"`
-		CDNCert      *string `json:"cdn_cert"`
-		CDNKey       *string `json:"cdn_key"`
+		Name          *string   `json:"name"`
+		PublicHost    *string   `json:"public_host"`
+		Remark        *string   `json:"remark"`
+		CDNEnabled    *bool     `json:"cdn_enabled"`
+		CDNDomain     *string   `json:"cdn_domain"`
+		CDNPort       *int      `json:"cdn_port"`
+		CDNConnectIPs *[]string `json:"cdn_connect_ips"`
+		CDNPreferIPs  *[]string `json:"cdn_prefer_ips"`
+		CDNCert       *string   `json:"cdn_cert"`
+		CDNKey        *string   `json:"cdn_key"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		fail(w, 400, err)
@@ -94,10 +94,11 @@ func (s *Server) patchNode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if req.CDNPreferIP != nil {
-		*req.CDNPreferIP = strings.TrimSpace(*req.CDNPreferIP)
-		if *req.CDNPreferIP != "" && net.ParseIP(*req.CDNPreferIP) == nil {
-			fail(w, 400, errors.New("CDN 优选 IP 格式不正确（只填 IP，不带端口）"))
+	var preferIPs []string
+	if req.CDNPreferIPs != nil {
+		var err error
+		if preferIPs, err = parseIPList(*req.CDNPreferIPs); err != nil {
+			fail(w, 400, err)
 			return
 		}
 	}
@@ -116,12 +117,12 @@ func (s *Server) patchNode(w http.ResponseWriter, r *http.Request) {
 		if req.Remark != nil {
 			n.Remark = strings.TrimSpace(*req.Remark)
 		}
-		if req.CDNPreferIP != nil && *req.CDNPreferIP != n.CDNPreferIP {
-			n.CDNPreferIP = *req.CDNPreferIP
+		if req.CDNPreferIPs != nil && strings.Join(preferIPs, ",") != strings.Join(n.CDNPreferIPs, ",") {
+			n.CDNPreferIPs = preferIPs
 			n.Version++ // 只影响本节点作为入口时的 CDN 连接
 		}
 		if req.CDNEnabled != nil {
-			if err := applyCDNSettings(st, n, req.CDNEnabled, req.CDNDomain, req.CDNPort, req.CDNConnectIP); err != nil {
+			if err := applyCDNSettings(st, n, req.CDNEnabled, req.CDNDomain, req.CDNPort, req.CDNConnectIPs); err != nil {
 				return err
 			}
 		}
@@ -147,7 +148,7 @@ func (s *Server) patchNode(w http.ResponseWriter, r *http.Request) {
 
 // applyCDNSettings 校验并保存节点的 CDN 出口设置；任何变化都会让所有节点重新同步，
 // 因为入口节点的连接地址和出口的目标白名单都依赖它。
-func applyCDNSettings(st *State, n *Node, enabled *bool, domain *string, port *int, ip *string) error {
+func applyCDNSettings(st *State, n *Node, enabled *bool, domain *string, port *int, ips *[]string) error {
 	if !*enabled {
 		for _, r := range st.Rules {
 			if r.Mode == "cdn" && r.CDNExitID == n.ID {
@@ -169,16 +170,21 @@ func applyCDNSettings(st *State, n *Node, enabled *bool, domain *string, port *i
 	if !cdnPorts[p] {
 		return errors.New("CDN 端口必须是 Cloudflare 支持的 HTTPS 端口：443、2053、2083、2087、2096、8443")
 	}
-	cip := strings.TrimSpace(deref(ip))
-	if cip != "" && net.ParseIP(cip) == nil {
-		return errors.New("优选 IP 格式不正确")
+	var cips []string
+	if ips != nil {
+		var err error
+		if cips, err = parseIPList(*ips); err != nil {
+			return err
+		}
+	} else {
+		cips = n.CDNConnectIPs
 	}
 	for _, o := range st.Nodes {
 		if o.ID != n.ID && o.CDNEnabled && o.CDNDomain == d {
 			return fmt.Errorf("域名 %s 已被节点「%s」使用", d, o.Name)
 		}
 	}
-	n.CDNEnabled, n.CDNDomain, n.CDNPort, n.CDNConnectIP = true, d, p, cip
+	n.CDNEnabled, n.CDNDomain, n.CDNPort, n.CDNConnectIPs = true, d, p, cips
 	if n.CDNSecret == "" {
 		n.CDNSecret = randHex(16)
 	}
@@ -431,4 +437,28 @@ func certInfo(pemText string) string {
 		return "证书格式无法识别"
 	}
 	return fmt.Sprintf("%s 签发，%s 到期", c.Issuer.CommonName, c.NotAfter.Format("2006-01-02"))
+}
+
+// parseIPList 校验优选 IP 列表：去掉空白与重复，只接受 IP（不带端口），最多 cdnMaxIPs 个。
+func parseIPList(in []string) ([]string, error) {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, raw := range in {
+		s := strings.TrimSpace(raw)
+		if s == "" {
+			continue
+		}
+		ip := net.ParseIP(s)
+		if ip == nil {
+			return nil, fmt.Errorf("优选 IP「%s」格式不正确（只填 IP，不带端口）", s)
+		}
+		if s = ip.String(); !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	if len(out) > cdnMaxIPs {
+		return nil, fmt.Errorf("优选 IP 最多 %d 个", cdnMaxIPs)
+	}
+	return out, nil
 }

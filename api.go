@@ -282,15 +282,15 @@ func (s *Server) nodeViews() []map[string]any {
 			"id": n.ID, "name": n.Name, "public_host": n.PublicHost, "remark": n.Remark, "created_at": n.CreatedAt,
 			"first_seen": n.FirstSeen, "version": n.Version, "tunnels": counts[n.ID][0], "rules": counts[n.ID][1],
 			"installed": n.TokenHash != "", "status": "pending",
-			"cdn_enabled": n.CDNEnabled, "cdn_domain": n.CDNDomain, "cdn_port": n.CDNPort, "cdn_connect_ip": n.CDNConnectIP,
-			"cdn_cert_info": certInfo(n.CDNCert), "cdn_prefer_ip": n.CDNPreferIP,
+			"cdn_enabled": n.CDNEnabled, "cdn_domain": n.CDNDomain, "cdn_port": n.CDNPort, "cdn_connect_ips": n.CDNConnectIPs,
+			"cdn_cert_info": certInfo(n.CDNCert), "cdn_prefer_ips": n.CDNPreferIPs,
 		}
 		if rt := a.nodeRT(n.ID); rt != nil {
 			a.mu.RLock()
 			rep := rt.Report
 			v["last_seen"], v["ip"], v["applied"] = rt.LastSeen, rt.IP, rep.Applied
 			v["agent_version"], v["arch"], v["os"], v["hostname"], v["sys"], v["apply_err"] = rep.Version, rep.Arch, rep.OS, rep.Hostname, rep.Sys, rep.ApplyErr
-			v["cdn"] = rep.CDN
+			v["cdn"], v["cdn_ips"] = rep.CDN, rep.CDNIPs
 			a.mu.RUnlock()
 			if now-rt.LastSeen <= offlineAfter {
 				v["status"] = "online"

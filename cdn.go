@@ -40,8 +40,9 @@ type CDNExitCfg struct {
 
 // CDNRoute 是入口节点经某个 CDN 出口转发时使用的地址。
 type CDNRoute struct {
-	URL       string `json:"url"`        // wss://域名:端口/kw-cdn/密钥
-	ConnectIP string `json:"connect_ip"` // 可选：Cloudflare 优选 IP，留空按 DNS 解析
+	URL        string   `json:"url"`         // wss://域名:端口/kw-cdn/密钥
+	ConnectIP  string   `json:"connect_ip"`  // 第一个优选 IP，兼容 2.1.3 及更早的 Agent
+	ConnectIPs []string `json:"connect_ips"` // 可选：多个 Cloudflare 优选 IP，轮询使用；留空按 DNS 解析
 }
 
 // ---------- 出口：在 Cloudflare 支持的端口上接受 WebSocket，再去连目标 ----------
@@ -239,8 +240,8 @@ func (e *CDNExit) Snapshot() map[string]any {
 
 // ---------- 入口：把一条 TCP 连接封装成 WSS 发往 Cloudflare ----------
 
-func cdnDial(ctx context.Context, rt CDNRoute, target string) (net.Conn, error) {
-	u, err := url.Parse(rt.URL)
+func cdnDial(ctx context.Context, wsURL, connectIP, target string) (net.Conn, error) {
+	u, err := url.Parse(wsURL)
 	if err != nil {
 		return nil, err
 	}
@@ -254,13 +255,13 @@ func cdnDial(ctx context.Context, rt CDNRoute, target string) (net.Conn, error) 
 		TLSClientConfig:   &tls.Config{ServerName: host, NextProtos: []string{"http/1.1"}},
 		ForceAttemptHTTP2: false,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if rt.ConnectIP != "" {
-				addr = net.JoinHostPort(rt.ConnectIP, port)
+			if connectIP != "" {
+				addr = net.JoinHostPort(connectIP, port)
 			}
 			return d.DialContext(ctx, network, addr)
 		},
 	}
-	ws, resp, err := websocket.Dial(ctx, rt.URL, &websocket.DialOptions{
+	ws, resp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		HTTPClient:      &http.Client{Transport: tr},
 		HTTPHeader:      http.Header{"X-KW-Target": {target}, "User-Agent": {"Mozilla/5.0"}},
 		CompressionMode: websocket.CompressionDisabled,
@@ -273,7 +274,7 @@ func cdnDial(ctx context.Context, rt CDNRoute, target string) (net.Conn, error) 
 			case 404:
 				return nil, errors.New("CDN 出口返回 404：密钥不匹配，或域名没有指向出口节点")
 			case 502:
-				return nil, errors.New("CDN 出口连不上目标")
+				return nil, errCDNExit{errors.New("CDN 出口连不上目标")}
 			case 521, 522, 523:
 				return nil, fmt.Errorf("Cloudflare %d：连不上出口源站，检查出口端口与防火墙", resp.StatusCode)
 			case 525, 526:

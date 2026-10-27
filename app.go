@@ -288,11 +288,15 @@ func (a *App) BuildConfig(nodeID string) *AgentConfig {
 			cfg.Rules = append(cfg.Rules, c)
 			if r.Mode == "cdn" {
 				if ex := st.node(r.CDNExitID); ex != nil && ex.CDNEnabled {
-					ip := ex.CDNConnectIP
-					if n.CDNPreferIP != "" {
-						ip = n.CDNPreferIP // 入口自己的优选 IP 优先：不同地区的入口适合的 Cloudflare IP 不同
+					ips := ex.CDNConnectIPs
+					if len(n.CDNPreferIPs) > 0 {
+						ips = n.CDNPreferIPs // 入口自己的优选 IP 优先：不同地区的入口适合的 Cloudflare IP 不同
 					}
-					cfg.CDNRoutes[ex.ID] = CDNRoute{URL: cdnURL(ex), ConnectIP: ip}
+					rt := CDNRoute{URL: cdnURL(ex), ConnectIPs: ips}
+					if len(ips) > 0 {
+						rt.ConnectIP = ips[0]
+					}
+					cfg.CDNRoutes[ex.ID] = rt
 				}
 			}
 		}
@@ -712,6 +716,16 @@ func maskKey(k string) string {
 // migrate 把单机版（v1）遗留的隧道和规则归到一个「本机」节点下。
 func (a *App) migrate() {
 	a.store.Update(func(st *State) error {
+		// 2.1.4：单个优选 IP 改为列表
+		for _, n := range st.Nodes {
+			if n.CDNConnectIP != "" && len(n.CDNConnectIPs) == 0 {
+				n.CDNConnectIPs = []string{n.CDNConnectIP}
+			}
+			if n.CDNPreferIP != "" && len(n.CDNPreferIPs) == 0 {
+				n.CDNPreferIPs = []string{n.CDNPreferIP}
+			}
+			n.CDNConnectIP, n.CDNPreferIP = "", ""
+		}
 		orphan := false
 		for _, t := range st.Tunnels {
 			orphan = orphan || t.NodeID == ""

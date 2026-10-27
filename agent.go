@@ -72,6 +72,7 @@ type AgentReport struct {
 	Events   []Event          `json:"events"`
 	ApplyErr string           `json:"apply_err"`
 	CDN      map[string]any   `json:"cdn"`
+	CDNIPs   map[string]any   `json:"cdn_ips"` // 本节点作为入口时各优选 IP 的状态
 }
 
 type syncResp struct {
@@ -95,6 +96,7 @@ type Agent struct {
 	applyErr string
 	cdnExit  *CDNExit
 	cdnKey   string
+	cdnIPs   *cdnIPPool
 
 	evMu   sync.Mutex
 	events []Event
@@ -106,7 +108,7 @@ type Agent struct {
 func NewAgent(server, token, dir string) *Agent {
 	return &Agent{
 		server: strings.TrimRight(server, "/"), token: token, dir: dir,
-		hc:      &http.Client{Timeout: 20 * time.Second},
+		hc: &http.Client{Timeout: 20 * time.Second}, cdnIPs: newCDNIPPool(),
 		tunnels: map[string]*TunnelRT{}, tunSpec: map[string]TunnelSpec{}, tunKey: map[string]string{},
 		rules: map[string]*RuleRT{}, ruleKey: map[string]string{}, probeSeq: map[string]int{},
 		boot: randHex(8),
@@ -436,7 +438,7 @@ func (a *Agent) dialerFor(r *Rule) dialer {
 			if !ok || rt.URL == "" {
 				return nil, nil, errors.New("CDN 出口未配置或未启用")
 			}
-			c, err := cdnDial(ctx, rt, addr)
+			c, err := a.cdnIPs.dial(ctx, rt, addr)
 			return c, nil, err
 		}
 	case "tunnel":
@@ -610,7 +612,15 @@ func (a *Agent) report() AgentReport {
 	if a.cdnExit != nil {
 		r.CDN = a.cdnExit.Snapshot()
 	}
+	inUse := map[string]bool{}
+	for _, rt := range a.cfg.CDNRoutes {
+		for _, ip := range rt.ConnectIPs {
+			inUse[ip] = true
+		}
+		inUse[rt.ConnectIP] = true
+	}
 	a.mu.RUnlock()
+	r.CDNIPs = a.cdnIPs.snapshot(inUse)
 	a.evMu.Lock()
 	r.Events = a.events
 	a.events = nil

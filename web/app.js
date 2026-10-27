@@ -266,7 +266,7 @@ function nodeTable(ns, withActs) {
   return `<table class="rtable"><thead><tr><th>节点</th><th>状态</th><th>入口地址</th><th>系统</th><th>负载</th><th>隧道 / 规则</th><th>配置</th>${withActs ? "<th></th>" : ""}</tr></thead><tbody>
   ${ns.map((n) => { const sys = n.sys || {}; const synced = n.applied === n.version;
     const cdn = (n.cdn_enabled ? `<span class="tag plus" title="${esc(n.cdn_domain)}:${n.cdn_port}">CDN 出口</span> ` : "") +
-      (n.cdn_prefer_ip ? `<span class="tag" title="本节点走 CDN 时使用的优选 IP">优选 ${esc(n.cdn_prefer_ip)}</span> ` : "");
+      ipTag(n);
     const cdnErr = n.cdn_enabled && n.status === "online" && (!n.cdn || !n.cdn.listening) ? `<span class="sub" style="color:var(--bad)">CDN 出口未监听</span>` : "";
     return `<tr><td data-l="节点"><b>${esc(n.name)}</b><span class="sub">${cdn}${esc(n.remark || n.hostname || "")}</span>${cdnErr}</td>
     <td data-l="状态">${pill(n.status === "online" ? "up" : n.status === "offline" ? "down" : "starting", STATUS[n.status])}<span class="sub">${n.last_seen ? "同步于 " + ago(n.last_seen) : n.installed ? "已下载安装脚本" : "等待执行安装命令"}</span></td>
@@ -299,29 +299,30 @@ function nodeModal(n) {
     <label>入口地址（用户连接用，填入 Xboard 的节点地址）<input name="public_host" value="${esc(n.public_host)}" placeholder="建议仅 DNS（灰色云朵）的域名，如 gz1.example.com"></label>
     <label>备注<input name="remark" value="${esc(n.remark)}" maxlength="200"></label>
     <p class="hint">入口地址用域名的好处：入口机被墙或更换时只需改 DNS，Xboard 和用户订阅都不用动。该域名不能开 Cloudflare 代理，因为转发端口不在 CDN 支持范围内。</p>
-    <label>CDN 优选 IP（可选，本节点作为入口走 CDN 时使用；只填 IP 不带端口）<input name="cdn_prefer_ip" value="${esc(n.cdn_prefer_ip)}" placeholder="留空则使用出口节点上的设置，再没有就按域名解析"></label>
+    <label>CDN 优选 IP（可选，本节点作为入口走 CDN 时使用；每行一个，最多 20 个，新连接在其间轮询）<textarea name="cdn_prefer_ips" placeholder="留空则使用出口节点上的设置，再没有就按域名解析&#10;104.17.1.1&#10;104.18.2.2" style="min-height:70px">${esc((n.cdn_prefer_ips || []).join("\n"))}</textarea></label>
+    ${ipStatus(n)}
     <p class="hint">优选 IP 只影响「本入口 → Cloudflare」这一段。海外入口一般留空；国内入口请在本机上测速，并用 curl --resolve 验证返回 404 后再填。</p>
     <h4 style="margin:18px 0 8px">Cloudflare CDN 出口（可选）</h4>
     <label class="check"><input type="checkbox" name="cdn_enabled" ${n.cdn_enabled ? "checked" : ""}> 让本节点作为 CDN 出口（其它节点的规则可经 Cloudflare CDN 转发到这里）</label>
     <div id="cdnBox">
       <div class="row3"><label>CDN 域名（橙色云朵，指向本节点 IP）<input name="cdn_domain" value="${esc(n.cdn_domain)}" placeholder="cdn.example.com"></label>
         <label>端口<select name="cdn_port">${[2096, 2053, 2083, 2087, 8443, 443].map((p) => `<option ${Number(n.cdn_port || 2096) === p ? "selected" : ""}>${p}</option>`).join("")}</select></label></div>
-      <label>默认优选 IP（可选，只填 IP 不带端口；经本出口的入口没有单独设置优选 IP 时使用，留空按域名解析）<input name="cdn_connect_ip" value="${esc(n.cdn_connect_ip)}" placeholder="例如 104.17.x.x"></label>
+      <label>默认优选 IP（可选，每行一个；经本出口、自己没设置优选 IP 的入口使用，留空按域名解析）<textarea name="cdn_connect_ips" placeholder="104.17.1.1&#10;104.18.2.2" style="min-height:60px">${esc((n.cdn_connect_ips || []).join("\n"))}</textarea></label>
       <label>源站证书（可选，PEM。Cloudflare SSL 模式为「完全（严格）」时必填）${n.cdn_cert_info ? `<span class="sub" style="color:var(--ok)">当前：${esc(n.cdn_cert_info)}</span>` : ""}<textarea name="cdn_cert" placeholder="-----BEGIN CERTIFICATE-----（留空保持不变）" style="min-height:70px"></textarea></label>
       <label>证书私钥（PEM）<textarea name="cdn_key" placeholder="-----BEGIN PRIVATE KEY-----" style="min-height:70px"></textarea></label>
       ${n.cdn_cert_info ? `<label class="check"><input type="checkbox" name="cdn_cert_clear"> 清除已上传的证书，改用自签证书</label>` : ""}
       <p class="hint">推荐在 Cloudflare 后台「SSL/TLS → 源服务器」创建源服务器证书（免费、15 年）填到这里，这样 SSL 模式为「完全」或「完全（严格）」都能用；不填证书时出口用自签证书，只适用于「完全」或「灵活」模式。本节点防火墙需放行该端口。CDN 只转发 TCP；大流量走免费 CDN 有被 Cloudflare 限制的风险，建议作为 WARP 不可用时的备用线路。</p>
     </div>
   </form>`, async (f, btn) => {
-    const body = { name: f.name.value, public_host: f.public_host.value, remark: f.remark.value, cdn_prefer_ip: f.cdn_prefer_ip.value.trim() };
-    const cdn = { cdn_enabled: f.cdn_enabled.checked, cdn_domain: f.cdn_domain.value.trim(), cdn_port: Number(f.cdn_port.value), cdn_connect_ip: f.cdn_connect_ip.value.trim() };
+    const body = { name: f.name.value, public_host: f.public_host.value, remark: f.remark.value, cdn_prefer_ips: ipList(f.cdn_prefer_ips.value) };
+    const cdn = { cdn_enabled: f.cdn_enabled.checked, cdn_domain: f.cdn_domain.value.trim(), cdn_port: Number(f.cdn_port.value), cdn_connect_ips: ipList(f.cdn_connect_ips.value) };
     if (f.cdn_cert.value.trim() || f.cdn_key.value.trim()) { cdn.cdn_cert = f.cdn_cert.value; cdn.cdn_key = f.cdn_key.value; }
     if (f.cdn_cert_clear && f.cdn_cert_clear.checked) { cdn.cdn_cert = ""; cdn.cdn_key = ""; }
-    const cdnChanged = "cdn_cert" in cdn || cdn.cdn_enabled !== !!n.cdn_enabled || (cdn.cdn_enabled && (cdn.cdn_domain !== (n.cdn_domain || "") || cdn.cdn_port !== Number(n.cdn_port || 0) || cdn.cdn_connect_ip !== (n.cdn_connect_ip || "")));
+    const cdnChanged = "cdn_cert" in cdn || cdn.cdn_enabled !== !!n.cdn_enabled || (cdn.cdn_enabled && (cdn.cdn_domain !== (n.cdn_domain || "") || cdn.cdn_port !== Number(n.cdn_port || 0) || cdn.cdn_connect_ips.join() !== (n.cdn_connect_ips || []).join()));
     if (edit) return !!(await act(btn, () => api(`/nodes/${n.id}`, { method: "PATCH", body: cdnChanged ? { ...body, ...cdn } : body }), "已保存"));
     const r = await act(btn, async () => {
       const created = await api("/nodes", { method: "POST", body });
-      const extra = { ...(cdn.cdn_enabled ? cdn : {}), ...(body.cdn_prefer_ip ? { cdn_prefer_ip: body.cdn_prefer_ip } : {}) };
+      const extra = { ...(cdn.cdn_enabled ? cdn : {}), ...(body.cdn_prefer_ips.length ? { cdn_prefer_ips: body.cdn_prefer_ips } : {}) };
       if (Object.keys(extra).length) await api(`/nodes/${created.id}`, { method: "PATCH", body: extra });
       return created;
     });
@@ -329,6 +330,26 @@ function nodeModal(n) {
   });
   const f = $("#f"), syncCdn = () => $("#cdnBox").classList.toggle("hidden", !f.cdn_enabled.checked);
   f.cdn_enabled.onchange = syncCdn; syncCdn();
+}
+
+// 优选 IP：每行一个，也接受逗号、空格分隔
+const ipList = (t) => [...new Set(t.split(/[\s,，;；]+/).map((x) => x.trim()).filter(Boolean))];
+
+function ipTag(n) {
+  const ips = n.cdn_prefer_ips || [];
+  if (!ips.length) return "";
+  const st = n.cdn_ips || {}, bad = ips.filter((ip) => st[ip]?.cooling).length;
+  const title = ips.map((ip) => { const x = st[ip]; return x ? `${ip}  成功 ${x.ok} / 失败 ${x.fail}${x.ms ? ` / ${x.ms}ms` : ""}${x.cooling ? "（暂停中）" : ""}` : `${ip}  尚未使用`; }).join("\n");
+  return `<span class="tag ${bad ? "warn" : ""}" title="${esc(title)}">优选 ${ips.length} 个 IP${bad ? `，${bad} 个暂停` : ""}</span> `;
+}
+
+function ipStatus(n) {
+  const st = n.cdn_ips || {}, ips = Object.keys(st);
+  if (!ips.length) return "";
+  return `<div class="hint"><b>各优选 IP 状态</b>（本节点作为入口，自 Agent 启动以来）：<br>${ips.map((ip) => {
+    const x = st[ip];
+    return `<span class="mono">${esc(ip)}</span>：成功 ${x.ok}，失败 ${x.fail}${x.ms ? `，最近建连 ${x.ms}ms` : ""}${x.cooling ? ` <span style="color:var(--bad)">暂停中</span>` : ""}${x.error ? `<span class="sub">${esc(x.error)}</span>` : ""}`;
+  }).join("<br>")}</div>`;
 }
 
 function installModal(info) {

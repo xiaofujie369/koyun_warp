@@ -13,24 +13,26 @@ import (
 
 // Node 是一台入口 VPS，上面运行 Agent，执行该节点的隧道与转发规则。
 type Node struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	PublicHost     string `json:"public_host"` // 用户连接的入口地址（建议仅 DNS 的域名）
-	Remark         string `json:"remark"`
-	TokenHash      string `json:"token_hash"` // Agent 永久令牌的 SHA-256
-	InstallToken   string `json:"install_token"`
-	InstallExpires int64  `json:"install_expires"`
-	Version        int64  `json:"version"`        // 期望配置版本，任何影响该节点的修改都会递增
-	CDNEnabled     bool   `json:"cdn_enabled"`    // 作为 Cloudflare CDN 出口
-	CDNDomain      string `json:"cdn_domain"`     // 开了橙色云朵、指向本节点的域名
-	CDNPort        int    `json:"cdn_port"`       // Cloudflare 支持的 HTTPS 端口
-	CDNSecret      string `json:"cdn_secret"`     // WebSocket 路径密钥
-	CDNConnectIP   string `json:"cdn_connect_ip"` // 经本出口的入口连 Cloudflare 时默认使用的优选 IP（可选）
-	CDNPreferIP    string `json:"cdn_prefer_ip"`  // 本节点作为入口走 CDN 时使用的优选 IP，优先于出口上的设置
-	CDNCert        string `json:"cdn_cert"`       // 源站证书 PEM（可选，SSL 模式为「完全（严格）」时需要）
-	CDNKey         string `json:"cdn_key"`        // 源站证书私钥 PEM
-	CreatedAt      int64  `json:"created_at"`
-	FirstSeen      int64  `json:"first_seen"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	PublicHost     string   `json:"public_host"` // 用户连接的入口地址（建议仅 DNS 的域名）
+	Remark         string   `json:"remark"`
+	TokenHash      string   `json:"token_hash"` // Agent 永久令牌的 SHA-256
+	InstallToken   string   `json:"install_token"`
+	InstallExpires int64    `json:"install_expires"`
+	Version        int64    `json:"version"`                  // 期望配置版本，任何影响该节点的修改都会递增
+	CDNEnabled     bool     `json:"cdn_enabled"`              // 作为 Cloudflare CDN 出口
+	CDNDomain      string   `json:"cdn_domain"`               // 开了橙色云朵、指向本节点的域名
+	CDNPort        int      `json:"cdn_port"`                 // Cloudflare 支持的 HTTPS 端口
+	CDNSecret      string   `json:"cdn_secret"`               // WebSocket 路径密钥
+	CDNConnectIP   string   `json:"cdn_connect_ip,omitempty"` // 旧版单个字段，启动时迁移到 CDNConnectIPs
+	CDNPreferIP    string   `json:"cdn_prefer_ip,omitempty"`  // 旧版单个字段，启动时迁移到 CDNPreferIPs
+	CDNConnectIPs  []string `json:"cdn_connect_ips"`          // 经本出口的入口默认使用的优选 IP（可多个，轮询）
+	CDNPreferIPs   []string `json:"cdn_prefer_ips"`           // 本节点作为入口走 CDN 时的优选 IP，优先于出口上的设置
+	CDNCert        string   `json:"cdn_cert"`                 // 源站证书 PEM（可选，SSL 模式为「完全（严格）」时需要）
+	CDNKey         string   `json:"cdn_key"`                  // 源站证书私钥 PEM
+	CreatedAt      int64    `json:"created_at"`
+	FirstSeen      int64    `json:"first_seen"`
 }
 
 // Tunnel 是持久化的 WARP 设备（一个设备 = 一条 WireGuard 隧道），归属于一个节点。

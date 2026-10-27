@@ -122,6 +122,7 @@ td.acts .btn { margin: 2px 0 2px 3px; }
 .pill.disabled, .pill.off, .pill.info { color: var(--off); }
 .tag { display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--muted); }
 .tag.plus { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
+.tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
 
 /* 隧道卡片 */
 .tunnels { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
